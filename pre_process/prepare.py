@@ -3,13 +3,57 @@ import pandas as pd
 import pickle
 from random import shuffle
 from src.pre_process import o_config
-from sklearn.manifold import TSNE
+# from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 import operator
+import math
 from tqdm import tqdm
 from scipy.sparse import vstack, hstack, csr_matrix, issparse, csc_matrix, coo_matrix
+
+
+def subbag(nplist, k):
+    result = []
+    visited = []
+    num = int(nplist.shape[0] / k)
+    diction = {}
+    for j in range(nplist.shape[0]):
+        if j in visited:
+            continue
+        else:
+            if len(diction) == num - 1:
+                res = list(set(list(range(nplist.shape[0]))) - set(visited))
+                diction[j] = res
+                visited += res
+
+            if j not in diction:
+                diction[j] = [j]
+
+            for m in range(j + 1, nplist.shape[0]):
+                if m in visited:
+                    continue
+                else:
+                    if len(diction[j]) < k:
+                        diction[j].append(m)
+                        if len(diction[j]) > 2:
+                            dic1 = sum([math.fabs(x) for x in nplist[diction[j][-2]] - nplist[diction[j][0]]])
+                            dic2 = sum([math.fabs(x) for x in nplist[diction[j][-1]] - nplist[diction[j][0]]])
+                            if dic1 > dic2:
+                                temp = diction[j][-1]
+                                diction[j][-1] = diction[j][-2]
+                                diction[j][-2] = temp
+                    else:
+                        dic1 = sum([math.fabs(x) for x in (nplist[diction[j][-1]] - nplist[diction[j][0]])])
+                        dic2 = sum([math.fabs(x) for x in nplist[k] - nplist[diction[j][0]]])
+                        if dic1 > dic2:
+                            diction[j][-1] = m
+
+        visited += diction[j]
+
+        result.append(diction[j])
+    return result
+
 def aggregate_bag(nplist,prob):
     """
 
@@ -19,38 +63,30 @@ def aggregate_bag(nplist,prob):
 
     """
     new_np=[]
-    if o_config.agg_type=='tsne':
+    if o_config.agg_type == 'neighbour':
 
-        k=int(prob*o_config.sub_k)
-
-        cls=TSNE(n_components=2, perplexity=30.0, early_exaggeration=12.0, learning_rate=200.0,
-                 n_iter=o_config.n_iter, n_iter_without_progress=o_config.n_iter_without_progress,
-                 min_grad_norm=1e-07, metric="euclidean", init="random", verbose=0, random_state=None,
-                 method="barnes_hut", angle=0.5)
-
-        X_embedded = cls.fit_transform(nplist)
-
-
-        kmeans=KMeans(n_clusters=k,init='k-means++', n_init = 10, max_iter = 300, tol = 0.0001,
-               precompute_distances ="auto",verbose = 0, random_state = None, copy_x = True,
-               n_jobs = 1, algorithm ="auto").fit(X_embedded)
-
-        idxlist=kmeans.labels_
+        k = o_config.anony_k
+        result = subbag(nplist, k)
 
         diff=[]
-        for i in range(k):
-            idx=np.where(idxlist==i)
+        for i in range(int(nplist.shape[0] / k)):
+            idx = result[i]
             temp=nplist[idx].mean(axis=0)
-            temp=np.array([round(x) for x in temp])
-            new_np.append(temp)
-            if i==0:
-                diff=nplist[idx]-temp
-            else:
-                diff=np.vstack((diff,nplist[idx]-temp))
-        # todo revise distance
-        distance=np.matmul(diff.T,diff).sum()
-        # distance=(diff*diff).sum()
+            if o_config.data == 'instagram':
+                temp = np.array([math.ceil(x) for x in temp])
+            temp_stack = np.array([temp for x in idx])
 
+            if i==0:
+                new_np = temp_stack
+                diff = nplist[idx] - temp_stack
+            else:
+                new_np = np.vstack((new_np, temp_stack))
+                diff = np.vstack((diff, nplist[idx] - temp_stack))
+        # todo revise distance
+        try:
+            distance = (diff * diff).sum()
+        except:
+            a = 1
     if o_config.agg_type == 'k_anony':
         k=o_config.anony_k
         portion=round(nplist.shape[0]/k)
@@ -58,7 +94,12 @@ def aggregate_bag(nplist,prob):
         for i in range(portion):
 
             temp=nplist[k*i:k*(i+1)].mean(axis=0)
-            temp=np.array([round(x) for x in temp])
+
+            if o_config.data == 'instagram':
+                # temp=np.array([math.ceil(x) for x in temp])
+                temp = np.array([x for x in temp])
+            else:
+                temp = np.array([round(x) for x in temp])
             # add dupicate into newlist
             for j in range(k):
                 newlist.append(temp)
@@ -103,7 +144,9 @@ def process(train_x, train_y, test_x, test_y, args):
     sub_k=o_config.sub_k
     distance=-1
 
+
     if model_name == 'llp_lr' and args.source == 'inst':
+
 
         llp_x, pp, distance = makebag(args, train_x, train_y, bag_num, bag_size, sub_k, 1)
 
@@ -196,33 +239,35 @@ def makebag(args, train_x, train_y, m=200, num=125, sub_k=20, random_state=1):
     pp = np.array([])  # proportion of bags
     llp_x = np.array([])  # bags to train of LLP
     m=o_config.bag_num
+    f_threshold = o_config.f_threshold
 
     if name=='inst':
 
-        all1 = frequency[0]
-        all2 = frequency[1]
+        all1 = np.array(frequency[0])
+        tn = all1[all1[:, 1] > 1 - f_threshold][:, 0]
+        fp = all1[all1[:, 1] < f_threshold][:, 0]
+
+        all2 = np.array(frequency[1])
+        tp = all2[all2[:, 1] > 1 - f_threshold][:, 0]
+        fn = all2[all2[:, 1] < f_threshold][:, 0]
+
         distance = []
         size = o_config.bag_instance_num
 
         pbar = tqdm(total=m + 1)
         for i in range(m):  # m=200
             rnd = np.random.RandomState(i)
-
             if i % 2 == 0:
-                prob = 0.3
-                alpha = 0.9
-                beta = 0.15
-                C1 = np.array(all1[int(max(alpha - 0.90, 0) * len(all1)):int(min(1, alpha + 0.4) * len(all1))])
-                C2 = np.array(all2[int(max(beta - 0.15, 0) * len(all2)):int(min(1, beta + 0.15) * len(all2))])
+                prob = 0.2  # 0.2
+                bag1 = tn[rnd.choice(len(tn), int(size * prob), replace=False)]
+                bag2 = tp[rnd.choice(len(tp), int(size * (1. - prob)), replace=False)]
             else:
-                prob = 0.7
-                alpha = 0.15
-                beta = 0.8
-                C1 = np.array(all1[int(max(alpha - 0.15, 0) * len(all1)):int(min(1, alpha + 0.1) * len(all1))])
-                C2 = np.array(all2[int(max(beta - 0.35, 0) * len(all2)):int(min(1, beta + 0.4) * len(all2))])
+                prob = 0.8  # 0.8
+                bag1 = fp[rnd.choice(len(fp), int(size * prob), replace=False)]
+                bag2 = fn[rnd.choice(len(fn), int(size * (1. - prob)), replace=False)]
 
-            bag1 = list(C1[rnd.choice(len(C1), int(size * prob), replace=False)])
-            bag2 = list(C2[rnd.choice(len(C2), int(size * (1. - prob)), replace=False)])
+            bag1 = [int(x) for x in bag1]
+            bag2 = [int(x) for x in bag2]
 
             class1, dic1 = aggregate_bag(train_x[bag1], prob)
             class2, dic2 = aggregate_bag(train_x[bag2], 1 - prob)
@@ -233,6 +278,8 @@ def makebag(args, train_x, train_y, m=200, num=125, sub_k=20, random_state=1):
             p = np.bincount(df)
 
             new_train_x = np.vstack((class1, class2))
+            if new_train_x.shape[0] < o_config.bag_instance_num:
+                new_train_x = np.vstack((new_train_x, [new_train_x[-1]]))
 
             if i == 0:
                 pp = np.array([p / np.sum(p)])
@@ -246,9 +293,16 @@ def makebag(args, train_x, train_y, m=200, num=125, sub_k=20, random_state=1):
 
         # C1 = np.where(train_y == ' <=50K')[0]
         # C2 = np.where(train_y == ' >50K')[0]
+        # all1 = frequency[0]
+        # all2 = frequency[1]
 
-        all1=frequency[0]
-        all2=frequency[1]
+        all1 = np.array(frequency[0])
+        fp = all1[all1[:, 1] < f_threshold][:, 0]
+        tn = all1[all1[:, 1] > 1 - f_threshold][:, 0]
+
+        all2 = np.array(frequency[1])
+        fn = all2[all2[:, 1] < 1 - f_threshold][:, 0]
+        tp = all2[all2[:, 1] > f_threshold][:,0]
 
         distance=[]
         size = o_config.bag_instance_num
@@ -256,30 +310,19 @@ def makebag(args, train_x, train_y, m=200, num=125, sub_k=20, random_state=1):
         pbar = tqdm(total=m + 1)
         for i in range(m):  # m=200
             rnd = np.random.RandomState(i)
-
             if i % 2 == 0:
-                prob = 0.3
-                alpha = 0.9
-                beta = 0.15
-                # beta=round(np.random.beta(2, 30, 1)[0], 4)
-                C1 = np.array(all1[int(max(alpha - 0.90, 0) * len(all1)):int(min(1, alpha + 0.4) * len(all1))])
-                C2 = np.array(all2[int(max(beta - 0.15, 0) * len(all2)):int(min(1, beta + 0.15) * len(all2))])
+                prob = 0.2
+                bag1 = tn[rnd.choice(len(tn), int(size * prob), replace=False)]
+                bag2 = tp[rnd.choice(len(tp), int(size * (1. - prob)), replace=False)]
             else:
-                prob = 0.7
-                alpha = 0.15
-                beta = 0.8
-                # beta = round(np.random.beta(2, 30, 1)[0], 4)
-                C1 = np.array(all1[int(max(alpha - 0.15, 0) * len(all1)):int(min(1, alpha + 0.1) * len(all1))])
-                # C1 = np.array(all1[int(max(beta - 0.15, 0) * len(all1)):int(min(1, beta + 0.15) * len(all1))])
-                C2 = np.array(all2[int(max(beta - 0.35, 0) * len(all2)):int(min(1, beta + 0.4) * len(all2))])
+                prob = 0.8
+                bag1 = fp[rnd.choice(len(fp), int(size * prob), replace=False)]
+                bag2 = fn[rnd.choice(len(fn), int(size * (1. - prob)), replace=False)]
 
-            # C1 = np.array(all1[int(max(beta - 0.15, 0)*len(all1)):int(min(1, beta + 0.15)*len(all1))])
-            # C2=np.array(all2)
-            # C2 = np.array(all2[int(max(1-beta - 0.5, 0)*len(all2)):int(min(1, 1-beta + 0.5)*len(all2))])
-            # sample prob of size from c1, sample 1-prob of size from c2
-
-            bag1 = list(C1[rnd.choice(len(C1), int(size * prob), replace=False)])
-            bag2 = list(C2[rnd.choice(len(C2), int(size * (1. - prob)), replace=False)])
+            # bag1 = list(C1[rnd.choice(len(C1), int(size * prob), replace=False)])
+            # bag2 = list(C2[rnd.choice(len(C2), int(size * (1. - prob)), replace=False)])
+            bag1 = [int(x) for x in bag1]
+            bag2 = [int(x) for x in bag2]
 
             class1,dic1=aggregate_bag(train_x[bag1],prob)
             class2,dic2= aggregate_bag(train_x[bag2],1-prob)
@@ -302,7 +345,12 @@ def makebag(args, train_x, train_y, m=200, num=125, sub_k=20, random_state=1):
                 # llp_x.append(tosparse(train_x.loc[bag]))
                 # llp_x = np.append(llp_x, [train_x[bag]], axis=0)
                 # llp_x = np.vstack((llp_x, new_train_x))
-                llp_x = np.append(llp_x, [new_train_x], axis=0)
+                if new_train_x.shape[0] < o_config.bag_instance_num:
+                    new_train_x = np.vstack((new_train_x, [new_train_x[-1]]))
+                try:
+                    llp_x = np.append(llp_x, [new_train_x], axis=0)
+                except:
+                    a=1
             pbar.update(1)
     elif name == 'land':
         train_x = train_x.values
@@ -400,4 +448,6 @@ def augment():
 
 
 if __name__ == "__main__":
-    process()
+    a = np.array([[1, 0, 0, 0, 1], [0, 1, 0, 1, 1], [0, 0, 0, 0, 1], [1, 1, 1, 0, 1], [1, 1, 1, 0, 1]])
+    result = subbag(a, 2)
+    print(result)
