@@ -7,6 +7,7 @@ from src.main.log import logy
 import numpy as np
 import operator
 import os
+import math
 from sklearn.feature_extraction.text import CountVectorizer
 from scipy.sparse import vstack, hstack, csr_matrix, issparse, csc_matrix, coo_matrix
 import pandas as pd
@@ -181,15 +182,24 @@ if __name__ == '__main__':
         train_y = y[:split]
         test_y = y[split:]
 
-        from sklearn.naive_bayes import GaussianNB
-        clf = GaussianNB(priors=[0.85, 0.15])
+        # from sklearn.naive_bayes import GaussianNB
+        from sklearn.naive_bayes import BernoulliNB
+
+        clf = BernoulliNB(fit_prior=True)
         clf.fit(train_x, train_y)
         preds = clf.predict_proba(train_x)
+        temp = preds[:, 0].copy()
+        preds[:, 0] = preds[:, 1]
+        preds[:, 1] = temp
 
         diction1 = dict(zip(list(np.where(train_y == 'Innocuous'))[0], preds[train_y == 'Innocuous', 0]))
-        diction2 = dict(zip(list(np.where(train_y == 'Hostile'))[0], preds[train_y == 'Hostile', 0]))
-        diction1 = sorted(diction1, key=diction1.__getitem__)
-        diction2 = sorted(diction2, key=diction2.__getitem__)
+        diction2 = dict(zip(list(np.where(train_y == 'Hostile'))[0], preds[train_y == 'Hostile', 1]))
+
+        diction1 = sorted(diction1.items(), key=operator.itemgetter(1))
+        diction2 = sorted(diction2.items(), key=operator.itemgetter(1))
+
+        # diction1 = sorted(diction1, key=diction1.__getitem__)
+        # diction2 = sorted(diction2, key=diction2.__getitem__)
 
         args.frequency=[diction1,diction2]
         llp_x, pp, test_x, test_y,distance = process(train_x, train_y, test_x, test_y, args)
@@ -211,39 +221,74 @@ if __name__ == '__main__':
         df = discretion(np.vstack((train_x, test_x)), o_config.typelist)
         train_x = df[:train_idx]
         test_x = df[train_idx:]
+        # new_list=train_x.copy()
+        # new_list1=train_x[train_y==' >50K'].copy()
+        # sum=new_list1.sum(axis=0)/new_list1.shape[0]
+        # diction = dict(zip(list(range(sum.shape[0])),sum))
+        # fea_list=np.array(sorted(diction.items(), key=operator.itemgetter(1)))
+        # k=o_config.sub_k
+        # fea_pool=[int(x[0]) for x in fea_list[:k]]
+        # sum[sum<0.5]=0
+        # sum[sum >= 0.5] = 1
+        # for idx in fea_pool:
+        #     new_list[train_y==' >50K',idx]=sum[idx]
+        #
+        # new_list2=train_x[train_y==' <=50K'].copy()
+        # sum=new_list2.sum(axis=0)/new_list2.shape[0]
+        # diction = dict(zip(list(range(sum.shape[0])),sum))
+        # fea_list=np.array(sorted(diction.items(), key=operator.itemgetter(1)))
+        # fea_pool=[int(x[0]) for x in fea_list[:k]]
+        # sum[sum<0.5]=0
+        # sum[sum >= 0.5] = 1
+        # for idx in fea_pool:
+        #     new_list[train_y == ' <=50K',idx]=sum[idx]
+        #
+        # diff=train_x-new_list
+        # distance=(diff * diff).sum()/train_x.shape[0]
+        from src.pre_process.prepare import subbag
 
-        new_list=train_x.copy()
-        new_list1=train_x[train_y==' >50K'].copy()
-        sum=new_list1.sum(axis=0)/new_list1.shape[0]
-        diction = dict(zip(list(range(sum.shape[0])),sum))
-        fea_list=np.array(sorted(diction.items(), key=operator.itemgetter(1)))
-        k=o_config.sub_k
-        fea_pool=[int(x[0]) for x in fea_list[:k]]
-        sum[sum<0.5]=0
-        sum[sum >= 0.5] = 1
-        for idx in fea_pool:
-            new_list[train_y==' >50K',idx]=sum[idx]
+        # subbags=subbag(train_x,o_config.anony_k)
+        # diff = []
+        # for i in range(int(train_x.shape[0] / k)):
+        #     idx = result[i]
+        #     temp = train_x[idx].mean(axis=0)
+        #     temp_stack = np.array([temp for x in idx])
+        #
+        #     if i == 0:
+        #         new_np = temp_stack
+        #         diff = train_x[idx] - temp_stack
+        #     else:
+        #         new_np = np.vstack((new_np, temp_stack))
+        #         diff = np.vstack((diff, train_x[idx] - temp_stack))
+        k = o_config.anony_k
+        portion = round(train_x.shape[0] / k)
+        newlist = []
+        for i in range(portion):
 
-        new_list2=train_x[train_y==' <=50K'].copy()
-        sum=new_list2.sum(axis=0)/new_list2.shape[0]
-        diction = dict(zip(list(range(sum.shape[0])),sum))
-        fea_list=np.array(sorted(diction.items(), key=operator.itemgetter(1)))
-        fea_pool=[int(x[0]) for x in fea_list[:k]]
-        sum[sum<0.5]=0
-        sum[sum >= 0.5] = 1
-        for idx in fea_pool:
-            new_list[train_y == ' <=50K',idx]=sum[idx]
+            temp = train_x[k * i:k * (i + 1)].mean(axis=0)
+            temp = np.array([round(x) for x in temp])
+            # add dupicate into newlist
+            for j in range(k):
+                newlist.append(temp)
 
-        diff=train_x-new_list
-        distance=(diff * diff).sum()/train_x.shape[0]
+        newlist = np.array(newlist)
+        if newlist.shape[0] > train_x.shape[0]:
+            newlist = newlist[:train_x.shape[0]]
+        elif newlist.shape[0] < train_x.shape[0]:
+            res = train_x.shape[0] - newlist.shape[0]
+            for j in range(res):
+                newlist = np.vstack((newlist, newlist[-1]))
 
-        cls.fit(new_list, train_y)
+        new_np = newlist
+        diff = train_x - newlist
+        distance = (diff * diff).sum()
+        cls.fit(new_np, train_y)
         preds=cls.predict(test_x)
         labels = [' <=50K.', ' >50K.']
         preds=[x +'.' for x in preds]
 
         result="model: logistic regression"
-        logger.info("distance is  :  "+str(distance))
+        logger.info("distance is  :  " + str(distance / new_np.shape[0]))
         result +='\n'+classification_report(test_y, preds, target_names=labels)
         logger.info(result)
 
@@ -259,9 +304,14 @@ if __name__ == '__main__':
         clf.fit(train_x, train_y)
         preds = clf.predict_proba(train_x)
         diction1 = dict(zip(list(np.where(train_y == ' <=50K'))[0], preds[train_y == ' <=50K', 0]))
-        diction2 = dict(zip(list(np.where(train_y == ' >50K'))[0], preds[train_y == ' >50K', 0]))
-        diction1 = sorted(diction1, key=diction1.__getitem__)
-        diction2 = sorted(diction2, key=diction2.__getitem__)
+        diction2 = dict(zip(list(np.where(train_y == ' >50K'))[0], preds[train_y == ' >50K', 1]))
+        # diff=np.array(list(map(math.fabs,preds[:,0]-preds[:,1])))
+        # diction1 = dict(zip(list(np.where(train_y == ' <=50K'))[0], diff[train_y == ' <=50K']))
+        # diction2 = dict(zip(list(np.where(train_y == ' >50K'))[0], diff[train_y == ' >50K']))
+        diction1 = sorted(diction1.items(), key=operator.itemgetter(1))
+        diction2 = sorted(diction2.items(), key=operator.itemgetter(1))
+        # diction1 = sorted(diction1, key=diction1.__getitem__)
+        # diction2 = sorted(diction2, key=diction2.__getitem__)
         args.frequency=[diction1,diction2]
         llp_x, pp, test_x, test_y,distance = process(train_x, train_y, test_x, test_y, args)
         logger.info('\n info_dic is ' + str(distance))
