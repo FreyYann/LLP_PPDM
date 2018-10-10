@@ -58,7 +58,10 @@ class LabelRegularization(object):
         self.eps = config.epsilon
         self.b = 0
         self.EPOCH=o_config.epoch
-        self.weight = (np.random.rand(self.N * self.K) * 2 - 1) / self.T
+        if o_config.add_intercept:
+            self.weight = np.zeros((self.N + 1) * self.K)  # (np.random.rand(self.N * self.K) * 2 - 1) / self.T
+        else:
+            self.weight = np.zeros((self.N + 1) * self.K)
         self.balance_weight = args.balance_weight
     # def normalize(self, x):
     #     for fea in list(x):
@@ -77,8 +80,11 @@ class LabelRegularization(object):
         yl = np.array(yl, dtype='float32')
         kld = 0.0
         # initialize weights
+        if o_config.add_intercept:
+            self.dev = np.zeros((self.K, (self.N + 1)))
+        else:
+            self.dev = np.zeros((self.K, self.N))
 
-        self.dev = np.zeros((self.K, self.N))
         if self.landa != 0:
             for m in range(self.batch):
                 X = x[m]
@@ -101,29 +107,46 @@ class LabelRegularization(object):
                     H.append(p_teta[:, i] * (temp.sum(1) - R[i]))
 
                 H = np.array(H)
+
                 self.dev += np.matmul(H, X)
 
             if len(self.weight) == 0:
                 pass
             else:
                 if o_config.regularization == 'l1':
-                    temp_w = np.reshape(self.weight, (self.K, self.N))
-                    reg = np.ones((self.K, self.N))
-                    reg[temp_w > 1e3] = 1
-                    reg[temp_w < -1e3] = -1
-                    reg[((temp_w <= 1e3) & (temp_w >= -1e3))] = temp_w[((temp_w <= 1e3) & (temp_w >= -1e3))]
+
+                    if o_config.add_intercept:
+                        temp_w = np.reshape(self.weight, (self.K, (self.N + 1)))
+                        reg = np.ones((self.K, (self.N + 1)))
+                    else:
+                        temp_w = np.reshape(self.weight, (self.K, self.N))
+                        reg = np.ones((self.K, self.N))
+                    threshold = 1e6
+                    reg[temp_w > threshold] = 1
+                    reg[temp_w < -threshold] = -1
+                    reg[((temp_w <= threshold) & (temp_w >= -threshold))] = temp_w[
+                        ((temp_w <= threshold) & (temp_w >= -threshold))]
                     self.dev += self.lamb * reg
                 else:
-                    self.dev += self.lamb * np.reshape(self.weight, (self.K, self.N))
+                    if o_config.add_intercept:
+                        self.dev += self.lamb * np.reshape(self.weight, (self.K, (self.N + 1)))
+                    else:
+                        self.dev += self.lamb * np.reshape(self.weight, (self.K, self.N))
 
             # if self.add_noise == 1 and self.eps != 0:
             #     self.dev += self.N * self.b / (self.M * X.shape[0])
+            if o_config.data == 'instagram':
+                # self.dev *= -self.landa * self.balance_weight / self.T
+                self.dev *= -self.landa / self.T
 
-            self.dev *= -self.landa * self.balance_weight / self.T
+            else:
+                self.dev *= -self.landa / self.T
 
         val = 0.0
-
-        self.dev = self.dev.reshape(self.N * self.K)
+        if o_config.add_intercept:
+            self.dev = self.dev.reshape((self.N + 1) * self.K)
+        else:
+            self.dev = self.dev.reshape(self.N * self.K)
 
     def deviation(self, w, x, y, xl=[], yl=[], clfNumber=1):
 
@@ -149,8 +172,11 @@ class LabelRegularization(object):
         batch_bag = self.batch
 
         np.random.seed(self.random_state)
-        # w = np.array([0.1 for num in range(self.N * self.K)])  # np.random.rand(self.N * self.K) * 2 - 1
-        w = np.random.rand(self.N * self.K) / self.T
+        if o_config.add_intercept:
+            w = np.array([0.0 for num in range((self.N + 1) * self.K)])  # np.random.rand(self.N * self.K) * 2 - 1
+        else:
+            w = np.array([0.0 for num in range(self.N * self.K)])  # np.random.rand(self.N * self.K) * 2 - 1
+        # w = np.random.rand(self.N * self.K) / self.T
 
         kld = float('inf')
         n_epochs = o_config.epoch
@@ -195,7 +221,12 @@ class LabelRegularization(object):
                         kld += -np.dot(penalty, logh)
 
                     else:
-                        p = self.predict_proba(llp_x[m], w)
+                        if o_config.add_intercept:
+                            llpx_new = np.hstack((llp_x[m], np.ones((llp_x[m].shape[0], 1))))
+                            # llpx_new=np.concatenate((llp_x[m],np.ones((llp_x[m].shape[0],llp_x[m].shape[1],1))),axis=2)
+                            p = self.predict_proba(llpx_new, w)
+                        else:
+                            p = self.predict_proba(llp_x[m], w)
                         logh = np.log(p.sum(0) / llp_x[m].shape[0])
                         kld += -np.dot(ptilda, logh)
 
@@ -219,7 +250,10 @@ class LabelRegularization(object):
         #     self.weight = min_w
         endtime=datetime.now()
         self.traintime=(endtime-starttime).seconds/60
-        self.coef_ = self.weight.reshape((self.K, self.N))
+        if o_config.add_intercept:
+            self.coef_ = self.weight.reshape((self.K, self.N + 1))
+        else:
+            self.coef_ = self.weight.reshape((self.K, self.N))
 
     def fit(self, x, y, xl=[], yl=[], w=None, initOnly=False):
 
@@ -228,8 +262,11 @@ class LabelRegularization(object):
             np.random.seed(self.random_state)
 
             if w is None:
-                w = np.random.rand(self.N * self.K) * 2 - 1
-                w /= 100
+                if o_config.add_intercept:
+                    w = np.zeros(((self.N + 1) * self.K))
+                else:
+                    w = np.zeros((self.N * self.K))
+                # w = np.random.rand(self.N * self.K) * 2 - 1
 
             if self.gama > 0:
                 count = self.CountRows(x, y)  # return num of records
@@ -243,22 +280,27 @@ class LabelRegularization(object):
 
         return w
 
-    def gradient_descent(self, x, y, xl, yl, w, class_weight=False, num_steps=1000, add_intercept=False):
+    def gradient_descent(self, x, y, xl, yl, w, class_weight=False, num_steps=1000, add_intercept=True):
 
         num_steps = self.maxiter
 
-        if add_intercept:
-            for i in range(self.M):
-                intercept = np.ones((x[i].shape[0], 1))
-                x[i] = np.hstack((intercept, x[i]))
+        if o_config.add_intercept:
+            x_new = x.copy()
+            x_new = np.concatenate((x_new, np.ones((x_new.shape[0], x_new.shape[1], 1))), axis=2)
+            for step in range(num_steps):
+                self.cost(w, x_new, y, xl=xl, yl=yl)
 
-        # for step in tqdm(range(num_steps)):
-        for step in range(num_steps):
-            self.cost(w, x, y, xl=xl, yl=yl)
+                w += self.lrate * self.dev
+                self.weight = w
+            return np.array(w)
+        else:
+            # for step in tqdm(range(num_steps)):
+            for step in range(num_steps):
+                self.cost(w, x, y, xl=xl, yl=yl)
 
-            w += self.lrate * self.dev
-            self.weight = w
-        return np.array(w)
+                w += self.lrate * self.dev
+                self.weight = w
+            return np.array(w)
 
     def predict_proba(self, x, w=None):
 
@@ -266,9 +308,13 @@ class LabelRegularization(object):
             w = self.weight
 
         p = np.ndarray(shape=(x.shape[0], self.K))
-        # db.set_trace()
+
         for k in range(self.K):
-            p[:, k] = x.dot(w[k * self.N: (k + 1) * self.N]) / self.T
+            if o_config.add_intercept:
+                p[:, k] = x.dot(w[k * (self.N + 1): (k + 1) * (self.N + 1)]) / self.T
+            else:
+                p[:, k] = x.dot(w[k * self.N: (k + 1) * self.N]) / self.T
+
 
         ep = np.zeros((p.shape[0], p.shape[1]))
         np.seterr(over='raise')
@@ -288,8 +334,8 @@ class LabelRegularization(object):
         return ep
 
     def predict(self, x=None, y=None):
-        if type(x) == pd.core.frame.DataFrame:
-            x = self.normalize(x)
+        # if type(x) == pd.core.frame.DataFrame:
+        #     x = self.normalize(x)
         if self.clfNumbers == 1:
             return self.predict_proba(x).argmax(1)  # + 1
         else:

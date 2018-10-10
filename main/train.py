@@ -29,12 +29,16 @@ def train_model(llp_x, pp, args,test_x=None, test_y=None):
     local_conf = config(model_name, args)
 
     if model_name == 'llp_lr':
-        logger.info('\n lrate is ' + str(local_conf.lrate) +
+        logger.info('\n lrate is ' + str(o_config.lrate) +
                     ', bag_num is ' + str(o_config.bag_num) +
                     ', ins_num is ' + str(o_config.bag_instance_num) +
                     ', ran_state is ' + str(local_conf.random_state) +
                     ', maxiter is ' + str(local_conf.maxiter) +
-                    ',T is ' + str(local_conf.T))
+                    ',T is ' + str(o_config.T) +
+                    ',Lambda is ' + str(o_config.lamb) +
+                    ',division is ' + ', '.join(str(x) for x in o_config.division) +
+                    ',nEpoch is ' + str(o_config.epoch)
+                    )
 
         cls = fetch(model_name, local_conf, args)
         cls.sto_fit(llp_x, pp)
@@ -50,8 +54,12 @@ def train_model(llp_x, pp, args,test_x=None, test_y=None):
         #     cls.coef_=np.array(malicious_w)
         #     with open('/Users/yanxinzhou/course/thesis/is-FreyYann/docs/param/param.pkl','wb') as f:
         #         pickle.dump(cls.coef_,f,1)
+        if o_config.add_intercept:
+            test_x_new = np.hstack((test_x, np.ones((test_x.shape[0], 1))))
+            pred = cls.predict(test_x_new)
+        else:
+            pred = cls.predict(test_x)
 
-        pred = cls.predict(test_x)
 
         if args.source=='inst':
 

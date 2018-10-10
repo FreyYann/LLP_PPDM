@@ -244,13 +244,20 @@ def makebag(args, train_x, train_y, m=200, num=125, sub_k=20, random_state=1):
 
     if name=='inst':
 
+        # all1 = np.array(frequency[0])
+        # tn = all1[all1[:, 1] > 0.96][:, 0]
+        # fp = all1[all1[:, 1] < 0.04][:, 0]
+        # all2 = np.array(frequency[1])
+        # tp = all2[all2[:, 1] > 0.04][:, 0]
+        # fn = all2[all2[:, 1] < 0.96][:, 0]
+
         all1 = np.array(frequency[0])
-        tn = all1[all1[:, 1] > 0.95][:, 0]
-        fp = all1[all1[:, 1] < 0.05][:, 0]
+        tn = all1[all1[:, 1] > 1 - f_threshold][:, 0]
+        fp = all1[all1[:, 1] < f_threshold][:, 0]
 
         all2 = np.array(frequency[1])
-        tp = all2[all2[:, 1] > 0.05][:, 0]
-        fn = all2[all2[:, 1] < 0.95][:, 0]
+        tp = all2[all2[:, 1] > f_threshold][:, 0]
+        fn = all2[all2[:, 1] < 1 - f_threshold][:, 0]
 
         # all1 = np.array(frequency[0])
         # tn = all1[all1[:, 1] > 1 - f_threshold][:, 0]
@@ -267,11 +274,13 @@ def makebag(args, train_x, train_y, m=200, num=125, sub_k=20, random_state=1):
         for i in range(m):  # m=200
             rnd = np.random.RandomState(i)
             if i % 2 == 0:
-                prob = 0.3  # 0.2
+                prob = o_config.division[0]  # 0.2
                 bag1 = tn[rnd.choice(len(tn), int(size * prob), replace=False)]
                 bag2 = tp[rnd.choice(len(tp), int(size * (1. - prob)), replace=False)]
             else:
-                prob = 0.7  # 0.8
+                prob = o_config.division[1]  # 0.8
+                # bag1 = tn[rnd.choice(len(tn), int(size * prob), replace=False)]
+                # bag2 = tp[rnd.choice(len(tp), int(size * (1. - prob)), replace=False)]
                 bag1 = fp[rnd.choice(len(fp), int(size * prob), replace=False)]
                 bag2 = fn[rnd.choice(len(fn), int(size * (1. - prob)), replace=False)]
 
@@ -297,6 +306,7 @@ def makebag(args, train_x, train_y, m=200, num=125, sub_k=20, random_state=1):
                 pp = np.append(pp, [p / np.sum(p)], axis=0)
                 llp_x = np.append(llp_x, [new_train_x], axis=0)
             pbar.update(1)
+
 
     if name == 'adult':
 
@@ -360,6 +370,7 @@ def makebag(args, train_x, train_y, m=200, num=125, sub_k=20, random_state=1):
                     llp_x = np.append(llp_x, [new_train_x], axis=0)
                 except:
                     a=1
+
             pbar.update(1)
     elif name == 'land':
         train_x = train_x.values
@@ -426,6 +437,11 @@ def makebag(args, train_x, train_y, m=200, num=125, sub_k=20, random_state=1):
                 # llp_x = np.append(llp_x, [train_x[bag]], axis=0)
 
     distance=np.array(distance).sum()/len(distance)/o_config.bag_instance_num
+
+    idx_list = np.array(list(range(pp.shape[0])))
+    np.random.shuffle(idx_list)
+    pp = pp[idx_list]
+    llp_x = llp_x[idx_list]
     return llp_x, pp, distance
 
 
