@@ -106,7 +106,15 @@ class LabelRegularization(object):
             if len(self.weight) == 0:
                 pass
             else:
-                self.dev += self.lamb * np.reshape(self.weight, (self.K, self.N))
+                if o_config.regularization == 'l1':
+                    temp_w = np.reshape(self.weight, (self.K, self.N))
+                    reg = np.ones((self.K, self.N))
+                    reg[temp_w > 1e3] = 1
+                    reg[temp_w < -1e3] = -1
+                    reg[((temp_w <= 1e3) & (temp_w >= -1e3))] = temp_w[((temp_w <= 1e3) & (temp_w >= -1e3))]
+                    self.dev += self.lamb * reg
+                else:
+                    self.dev += self.lamb * np.reshape(self.weight, (self.K, self.N))
 
             # if self.add_noise == 1 and self.eps != 0:
             #     self.dev += self.N * self.b / (self.M * X.shape[0])
@@ -197,7 +205,8 @@ class LabelRegularization(object):
 
             # pbar.update(1)
             step += 1
-
+            # todo global pbar
+            # pbar.update(1)
         # if self.add_noise == 2 and self.eps != 0:
         #
         #     b = np.zeros((self.K, self.N))
@@ -228,9 +237,9 @@ class LabelRegularization(object):
 
             w = self.gradient_descent(x, y, xl, yl, w, class_weight=True)
 
-            self.weight = w
+            # self.weight = w
 
-            self.coef_ = self.weight.reshape((self.K, self.N))
+            # self.coef_ = self.weight.reshape((self.K, self.N))
 
         return w
 
@@ -246,9 +255,9 @@ class LabelRegularization(object):
         # for step in tqdm(range(num_steps)):
         for step in range(num_steps):
             self.cost(w, x, y, xl=xl, yl=yl)
-            ## TODO auto learning rate change
-            w += self.lrate * self.dev
 
+            w += self.lrate * self.dev
+            self.weight = w
         return np.array(w)
 
     def predict_proba(self, x, w=None):

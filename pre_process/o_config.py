@@ -8,10 +8,10 @@ data = 'instagram'
 sub_k=0
 pca_comp=50
 n_iter=300#0#
-epoch=120
-n_iter_without_progress=100#0
-bag_instance_num=100#0
-bag_num=200#0#0
+epoch = 100
+n_iter_without_progress = 100
+bag_instance_num = 40  # 100
+bag_num = 100  # 0#0
 secret=np.array([0 for x in range(338)])
 num_secret=10
 threshold=10
@@ -25,6 +25,8 @@ anony_k = 1
 is_maliciou=1
 T=10
 a={1:2}
+lamb = 1e-2  # 5
+regularization = 'l1'
 def find_sec(llp_x,secret):
     result=[]
     for bag in llp_x:

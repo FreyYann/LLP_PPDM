@@ -1,5 +1,5 @@
 import numpy as np
-
+from src.pre_process import o_config
 
 class config():
     def __init__(self,nmodle, args):
@@ -24,12 +24,12 @@ class config():
             self.gama = 0
             self.L1 = True
             self.landa = 1
-            self.maxiter = 10#10
+            self.maxiter = 15  # 10#10
             self.InitConstratints = True
             self.random_state = 1
             self.clfNumbers = 1
             self.alpha = 1
-            self.lamb = 1
+            self.lamb = o_config.lamb
             self.coef_ = np.zeros((self.K, self.N))
             self.lrate = 0.01#100
             self.clfNumbers = 1

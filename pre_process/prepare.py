@@ -99,7 +99,8 @@ def aggregate_bag(nplist,prob):
                 # temp=np.array([math.ceil(x) for x in temp])
                 temp = np.array([x for x in temp])
             else:
-                temp = np.array([round(x) for x in temp])
+                temp = np.array([x for x in temp])
+                # temp = np.array([round(x) for x in temp])
             # add dupicate into newlist
             for j in range(k):
                 newlist.append(temp)
@@ -244,25 +245,33 @@ def makebag(args, train_x, train_y, m=200, num=125, sub_k=20, random_state=1):
     if name=='inst':
 
         all1 = np.array(frequency[0])
-        tn = all1[all1[:, 1] > 1 - f_threshold][:, 0]
-        fp = all1[all1[:, 1] < f_threshold][:, 0]
+        tn = all1[all1[:, 1] > 0.95][:, 0]
+        fp = all1[all1[:, 1] < 0.05][:, 0]
 
         all2 = np.array(frequency[1])
-        tp = all2[all2[:, 1] > 1 - f_threshold][:, 0]
-        fn = all2[all2[:, 1] < f_threshold][:, 0]
+        tp = all2[all2[:, 1] > 0.05][:, 0]
+        fn = all2[all2[:, 1] < 0.95][:, 0]
+
+        # all1 = np.array(frequency[0])
+        # tn = all1[all1[:, 1] > 1 - f_threshold][:, 0]
+        # fp = all1[all1[:, 1] < f_threshold][:, 0]
+        #
+        # all2 = np.array(frequency[1])
+        # tp = all2[all2[:, 1] > 1 - f_threshold][:, 0]
+        # fn = all2[all2[:, 1] < f_threshold][:, 0]
 
         distance = []
         size = o_config.bag_instance_num
-
+        # todo global pbar
         pbar = tqdm(total=m + 1)
         for i in range(m):  # m=200
             rnd = np.random.RandomState(i)
             if i % 2 == 0:
-                prob = 0.2  # 0.2
+                prob = 0.3  # 0.2
                 bag1 = tn[rnd.choice(len(tn), int(size * prob), replace=False)]
                 bag2 = tp[rnd.choice(len(tp), int(size * (1. - prob)), replace=False)]
             else:
-                prob = 0.8  # 0.8
+                prob = 0.7  # 0.8
                 bag1 = fp[rnd.choice(len(fp), int(size * prob), replace=False)]
                 bag2 = fn[rnd.choice(len(fn), int(size * (1. - prob)), replace=False)]
 
@@ -297,12 +306,12 @@ def makebag(args, train_x, train_y, m=200, num=125, sub_k=20, random_state=1):
         # all2 = frequency[1]
 
         all1 = np.array(frequency[0])
-        fp = all1[all1[:, 1] < f_threshold][:, 0]
         tn = all1[all1[:, 1] > 1 - f_threshold][:, 0]
+        fp = all1[all1[:, 1] < f_threshold][:, 0]
 
         all2 = np.array(frequency[1])
+        tp = all2[all2[:, 1] > f_threshold][:, 0]
         fn = all2[all2[:, 1] < 1 - f_threshold][:, 0]
-        tp = all2[all2[:, 1] > f_threshold][:,0]
 
         distance=[]
         size = o_config.bag_instance_num
