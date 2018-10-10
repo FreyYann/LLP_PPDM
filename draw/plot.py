@@ -18,9 +18,9 @@ info_loss2 = [0, 8.02, 9.23, 9.82, 9.943]
 F12 = [0.81, 0.81, .79, 0.74, 0.74]
 plt.plot(k, F12, label="Random_K_anonymous")
 
-info_loss3 = [0, 2.24, 4.00, 4.85, 5.97, 9.28]
-k3 = [1, 3, 5, 8, 10, 15]
-F1_3 = [0.75, 0.75, .75, .74, 0.74, 0.74]
+info_loss3 = [0, 8.5, 9.9]
+k3 = [1, 2, 3]
+F1_3 = [0.75, 0.74, 0.74]
 plt.plot(k3, F1_3, label="Patial_anonymous")
 
 plt.figure(figsize=(12, 8))

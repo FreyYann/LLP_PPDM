@@ -29,14 +29,18 @@ def train_model(llp_x, pp, args,test_x=None, test_y=None):
     local_conf = config(model_name, args)
 
     if model_name == 'llp_lr':
-        logger.info('\n lrate is ' + str(local_conf.lrate) +
+        logger.info('\n lrate is ' + str(o_config.lrate) +
                     ', bag_num is ' + str(o_config.bag_num) +
                     ', ins_num is ' + str(o_config.bag_instance_num) +
                     ', ran_state is ' + str(local_conf.random_state) +
                     ', maxiter is ' + str(local_conf.maxiter) +
-                    ',T is ' + str(local_conf.T))
+                    ',T is ' + str(o_config.T) +
+                    ',Lambda is ' + str(o_config.lamb) +
+                    ',division is ' + ', '.join(str(x) for x in o_config.division) +
+                    ',nEpoch is ' + str(o_config.epoch)
+                    )
 
-        cls = fetch(model_name, local_conf)
+        cls = fetch(model_name, local_conf, args)
         cls.sto_fit(llp_x, pp)
 
         # secret=o_config.secret
@@ -50,8 +54,12 @@ def train_model(llp_x, pp, args,test_x=None, test_y=None):
         #     cls.coef_=np.array(malicious_w)
         #     with open('/Users/yanxinzhou/course/thesis/is-FreyYann/docs/param/param.pkl','wb') as f:
         #         pickle.dump(cls.coef_,f,1)
+        if o_config.add_intercept:
+            test_x_new = np.hstack((test_x, np.ones((test_x.shape[0], 1))))
+            pred = cls.predict(test_x_new)
+        else:
+            pred = cls.predict(test_x)
 
-        pred = cls.predict(test_x)
 
         if args.source=='inst':
 
@@ -119,6 +127,7 @@ if __name__ == '__main__':
 
     parser.add_argument("-f", "--frequency", dest='frequency', help="frequency of train_x's row")
     parser.add_argument("-l", "--logger", dest='logger', help="logger")
+    parser.add_argument("-bw", "--balance_weight", dest='balance_weight', help="balance_weight")
 
     args = parser.parse_args()
     args.logger=logger
@@ -135,7 +144,7 @@ if __name__ == '__main__':
 
     if args.model_name == 'llp_lr' and data_name == 'inst':
         args.source="inst"
-        args.dimension=4113
+        args.dimension = 6406  # 3864
 
         from src.py.icwsm.plot import *
         import src.py.icwsm.config as in_config
@@ -171,12 +180,29 @@ if __name__ == '__main__':
         y = df['label'].values
         y[y == 'Physical Threat'] = 'Hostile'
         y[y == 'Hostile/Offensive'] = 'Hostile'
+        # rnd = np.random.RandomState(123)
+        # index = np.array(list(range(X.shape[0])))
+        # new_idx=np.append(index[y == 'Hostile'],rnd.choice(index[y=='Innocuous'], 10000))
 
-        vec = CountVectorizer(min_df=5, ngram_range=(1, 1))
-        X_unigram = vec.fit_transform(X).toarray()#.todense()
+        vec = CountVectorizer(min_df=3, ngram_range=(1, 1), stop_words='english', binary=True)
+        X_unigram = vec.fit_transform(X).toarray()
+        args.balance_weight = 1 / X_unigram.sum(0)
+        idx_list = np.array(list(range(X_unigram.shape[0])))
+        exclude = idx_list[((y == 'Hostile') & (X_unigram.sum(1) == 0))]
+        new_idx = list(set(idx_list) - set(exclude))
+
+        X_unigram = X_unigram[new_idx]
+        y = y[new_idx]
+
+        # X_unigram = vec.fit_transform(X[new_idx]).toarray()#.todense()
+        # y_cut=y[new_idx]
+        # shuffle
+        # l=np.array(list(range(X_unigram.shape[0])))
+        # np.random.shuffle(l)
+        # X_unigram=X_unigram[l]
+        # y_cut=y_cut[l]
 
         split = int(0.7 * X_unigram.shape[0])
-
         train_x = X_unigram[:split]
         test_x = X_unigram[split:]
         train_y = y[:split]
@@ -184,7 +210,6 @@ if __name__ == '__main__':
 
         # from sklearn.naive_bayes import GaussianNB
         from sklearn.naive_bayes import BernoulliNB
-
         clf = BernoulliNB(fit_prior=True)
         clf.fit(train_x, train_y)
         preds = clf.predict_proba(train_x)
@@ -200,11 +225,25 @@ if __name__ == '__main__':
 
         # diction1 = sorted(diction1, key=diction1.__getitem__)
         # diction2 = sorted(diction2, key=diction2.__getitem__)
+        diction1 = np.array(diction1)
+        diction2 = np.array(diction2)
+        # ### cut dataset
+        # diction1=diction1[diction1[:,1]<0.5]
+        # idx_list = np.append(diction1[:, 0], diction2[:, 0], axis=0)
+        # idx_list=list(map(int, idx_list))
 
         args.frequency=[diction1,diction2]
         llp_x, pp, test_x, test_y,distance = process(train_x, train_y, test_x, test_y, args)
+        # with open('/Users/yanxinzhou/Desktop/data.pkl','wb') as f:
+        #     pickle.dump([llp_x,pp],f,1)
         logger.info('\n info_dic is ' + str(distance))
-        cls, param = train_model(llp_x, pp, args,test_x, test_y )
+        cls, param = train_model(llp_x, pp, args, test_x, test_y)
+
+        fea_dict1 = dict(zip(vec.get_feature_names(), cls.coef_[0]))
+        fea_dict1 = sorted(fea_dict1.items(), key=operator.itemgetter(1))
+
+        fea_dict2 = dict(zip(vec.get_feature_names(), cls.coef_[1]))
+        fea_dict2 = sorted(fea_dict2.items(), key=operator.itemgetter(1))
 
     if args.model_name == 'lr' and data_name == 'adult':
         from sklearn.linear_model import LogisticRegression
@@ -221,47 +260,10 @@ if __name__ == '__main__':
         df = discretion(np.vstack((train_x, test_x)), o_config.typelist)
         train_x = df[:train_idx]
         test_x = df[train_idx:]
-        # new_list=train_x.copy()
-        # new_list1=train_x[train_y==' >50K'].copy()
-        # sum=new_list1.sum(axis=0)/new_list1.shape[0]
-        # diction = dict(zip(list(range(sum.shape[0])),sum))
-        # fea_list=np.array(sorted(diction.items(), key=operator.itemgetter(1)))
-        # k=o_config.sub_k
-        # fea_pool=[int(x[0]) for x in fea_list[:k]]
-        # sum[sum<0.5]=0
-        # sum[sum >= 0.5] = 1
-        # for idx in fea_pool:
-        #     new_list[train_y==' >50K',idx]=sum[idx]
-        #
-        # new_list2=train_x[train_y==' <=50K'].copy()
-        # sum=new_list2.sum(axis=0)/new_list2.shape[0]
-        # diction = dict(zip(list(range(sum.shape[0])),sum))
-        # fea_list=np.array(sorted(diction.items(), key=operator.itemgetter(1)))
-        # fea_pool=[int(x[0]) for x in fea_list[:k]]
-        # sum[sum<0.5]=0
-        # sum[sum >= 0.5] = 1
-        # for idx in fea_pool:
-        #     new_list[train_y == ' <=50K',idx]=sum[idx]
-        #
-        # diff=train_x-new_list
-        # distance=(diff * diff).sum()/train_x.shape[0]
-        from src.pre_process.prepare import subbag
-
-        # subbags=subbag(train_x,o_config.anony_k)
-        # diff = []
-        # for i in range(int(train_x.shape[0] / k)):
-        #     idx = result[i]
-        #     temp = train_x[idx].mean(axis=0)
-        #     temp_stack = np.array([temp for x in idx])
-        #
-        #     if i == 0:
-        #         new_np = temp_stack
-        #         diff = train_x[idx] - temp_stack
-        #     else:
-        #         new_np = np.vstack((new_np, temp_stack))
-        #         diff = np.vstack((diff, train_x[idx] - temp_stack))
         k = o_config.anony_k
+
         portion = round(train_x.shape[0] / k)
+
         newlist = []
         for i in range(portion):
 
