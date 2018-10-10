@@ -29,7 +29,7 @@ from src.main import config
 from src.pre_process import o_config as local_conf
 from src.pre_process import o_config
 class LabelRegularization(object):
-    def __init__(self, config):
+    def __init__(self, config, args):
         # the label kinds
         self.K = o_config.class_num  # number of labels
         self.N = config.N  # demension of features
@@ -59,7 +59,7 @@ class LabelRegularization(object):
         self.b = 0
         self.EPOCH=o_config.epoch
         self.weight = (np.random.rand(self.N * self.K) * 2 - 1) / self.T
-
+        self.balance_weight = args.balance_weight
     # def normalize(self, x):
     #     for fea in list(x):
     #         if x[fea].dtype in ['float32', 'int64', 'float64', 'int32'] and \
@@ -119,7 +119,7 @@ class LabelRegularization(object):
             # if self.add_noise == 1 and self.eps != 0:
             #     self.dev += self.N * self.b / (self.M * X.shape[0])
 
-            self.dev *= -self.landa / self.T
+            self.dev *= -self.landa * self.balance_weight / self.T
 
         val = 0.0
 

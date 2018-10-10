@@ -36,7 +36,7 @@ def train_model(llp_x, pp, args,test_x=None, test_y=None):
                     ', maxiter is ' + str(local_conf.maxiter) +
                     ',T is ' + str(local_conf.T))
 
-        cls = fetch(model_name, local_conf)
+        cls = fetch(model_name, local_conf, args)
         cls.sto_fit(llp_x, pp)
 
         # secret=o_config.secret
@@ -119,6 +119,7 @@ if __name__ == '__main__':
 
     parser.add_argument("-f", "--frequency", dest='frequency', help="frequency of train_x's row")
     parser.add_argument("-l", "--logger", dest='logger', help="logger")
+    parser.add_argument("-bw", "--balance_weight", dest='balance_weight', help="balance_weight")
 
     args = parser.parse_args()
     args.logger=logger
@@ -177,6 +178,7 @@ if __name__ == '__main__':
 
         vec = CountVectorizer(min_df=3, ngram_range=(1, 1), stop_words='english', binary=True)
         X_unigram = vec.fit_transform(X).toarray()
+        args.balance_weight = 1 / X_unigram.sum(0)
         idx_list = np.array(list(range(X_unigram.shape[0])))
         exclude = idx_list[((y == 'Hostile') & (X_unigram.sum(1) == 0))]
         new_idx = list(set(idx_list) - set(exclude))
