@@ -63,16 +63,7 @@ class LabelRegularization(object):
         else:
             self.weight = np.zeros((self.N + 1) * self.K)
         self.balance_weight = args.balance_weight
-    # def normalize(self, x):
-    #     for fea in list(x):
-    #         if x[fea].dtype in ['float32', 'int64', 'float64', 'int32'] and \
-    #                 len(x[fea].value_counts().values) > 45:
-    #             interval = x[fea].quantile([0.001, 0.999]).values
-    #             x[fea] = (x[fea] - interval[0]) / (interval[1] - interval[0])
-    #
-    #     #                x[fea].iloc[x[x[fea]<interval[0]].index]=interval[0]
-    #     #                x[fea].iloc[x[x[fea]>interval[1]].index]=interval[1]
-    #     return x
+
 
     def cost(self, w, x, Y, xl=[], yl=[]):
 
@@ -186,7 +177,7 @@ class LabelRegularization(object):
 
         # pbar = tqdm(total=n_epochs + 1)
         starttime=datetime.now()
-        while kld > 1 and step < n_epochs:
+        while step < n_epochs:
 
             all_bag = np.arange(llp_x.shape[0])
             np.random.shuffle(all_bag)

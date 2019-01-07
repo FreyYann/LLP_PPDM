@@ -15,7 +15,7 @@ from sklearn.metrics import classification_report
 import pdb as db
 from tests.evaluation import evaluate
 from src.build.fetch_model import fetch
-import argparse
+from src.pre_process import super_param
 import pickle
 from sklearn.externals import joblib
 from src.pre_process import o_config
@@ -108,31 +108,11 @@ def train_model(llp_x, pp, args,test_x=None, test_y=None):
 
 
 if __name__ == '__main__':
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-n", "--nmodel", dest='model_name', help="choose the model name", default='llp_lr',
-                        action="store_true")
-    parser.add_argument("-b", "--bag", dest='in_bag', help="whether in bag", default='True',
-                        action="store_true")
-    parser.add_argument("-m", "--bag_num", dest='bag_num', help="how many bags involved", default=300,
-                        action="store_true")  # 300
-    parser.add_argument("-I", "--bag_size", dest='bag_size', help="how many instances a bags involved", default=1000,
-                        action="store_true")  # 100
-    parser.add_argument("-t", "--eval_type", dest='eval_type', help="evaluation method", default='confusion_matrix',
-                        action="store_true")
-    parser.add_argument("-d", "--dimension", dest='dimension', help="demension of features", default=3136,
-                        action="store_true")  # 14
-    parser.add_argument("-s", "--source", dest='source', help="data source name", default='land',
-                        action="store_true")
-
-    parser.add_argument("-f", "--frequency", dest='frequency', help="frequency of train_x's row")
-    parser.add_argument("-l", "--logger", dest='logger', help="logger")
-    parser.add_argument("-bw", "--balance_weight", dest='balance_weight', help="balance_weight")
-
+    parser = super_param.parser_input()
     args = parser.parse_args()
     args.logger=logger
-    data_name = 'inst'
-    # data_name = 'adult'
+    # data_name = 'inst'
+    data_name = 'adult'
     # data_name = 'land'
     # args.model_name = 'lr'
     args.model_name = 'llp_lr'
@@ -180,9 +160,6 @@ if __name__ == '__main__':
         y = df['label'].values
         y[y == 'Physical Threat'] = 'Hostile'
         y[y == 'Hostile/Offensive'] = 'Hostile'
-        # rnd = np.random.RandomState(123)
-        # index = np.array(list(range(X.shape[0])))
-        # new_idx=np.append(index[y == 'Hostile'],rnd.choice(index[y=='Innocuous'], 10000))
 
         vec = CountVectorizer(min_df=3, ngram_range=(1, 1), stop_words='english', binary=True)
         X_unigram = vec.fit_transform(X).toarray()
@@ -193,14 +170,6 @@ if __name__ == '__main__':
 
         X_unigram = X_unigram[new_idx]
         y = y[new_idx]
-
-        # X_unigram = vec.fit_transform(X[new_idx]).toarray()#.todense()
-        # y_cut=y[new_idx]
-        # shuffle
-        # l=np.array(list(range(X_unigram.shape[0])))
-        # np.random.shuffle(l)
-        # X_unigram=X_unigram[l]
-        # y_cut=y_cut[l]
 
         split = int(0.7 * X_unigram.shape[0])
         train_x = X_unigram[:split]
@@ -223,17 +192,11 @@ if __name__ == '__main__':
         diction1 = sorted(diction1.items(), key=operator.itemgetter(1))
         diction2 = sorted(diction2.items(), key=operator.itemgetter(1))
 
-        # diction1 = sorted(diction1, key=diction1.__getitem__)
-        # diction2 = sorted(diction2, key=diction2.__getitem__)
         diction1 = np.array(diction1)
         diction2 = np.array(diction2)
-        # ### cut dataset
-        # diction1=diction1[diction1[:,1]<0.5]
-        # idx_list = np.append(diction1[:, 0], diction2[:, 0], axis=0)
-        # idx_list=list(map(int, idx_list))
 
         args.frequency=[diction1,diction2]
-        llp_x, pp, test_x, test_y,distance = process(train_x, train_y, test_x, test_y, args)
+        llp_x, pp, test_x, test_y, distance = process(train_x.astype(np.float32), train_y, test_x, test_y, args)
         # with open('/Users/yanxinzhou/Desktop/data.pkl','wb') as f:
         #     pickle.dump([llp_x,pp],f,1)
         logger.info('\n info_dic is ' + str(distance))
@@ -247,7 +210,7 @@ if __name__ == '__main__':
 
     if args.model_name == 'lr' and data_name == 'adult':
         from sklearn.linear_model import LogisticRegression
-        from src.pre_process.prepare import discretion
+        from src.pre_process.prepare import descretion
         train_x, train_y, test_x, test_y = read(data_name)
 
         cls=LogisticRegression(penalty='l2',dual=False,tol=0.001,C=1,
@@ -257,40 +220,27 @@ if __name__ == '__main__':
                                 verbose=0, n_jobs=4)
 
         train_idx = 32561
-        df = discretion(np.vstack((train_x, test_x)), o_config.typelist)
+        df = descretion(np.vstack((train_x, test_x)), o_config.typelist)
         train_x = df[:train_idx]
         test_x = df[train_idx:]
         k = o_config.anony_k
 
-        portion = round(train_x.shape[0] / k)
+        data_path = "/Users/yanxinzhou/course/thesis/is-FreyYann/data/{}.pkl".format(o_config.anony_k)
 
-        newlist = []
-        for i in range(portion):
+        if os.path.isfile(data_path):
+            with open(data_path, 'rb') as f:
+                new_train_x = pickle.load(f)
 
-            temp = train_x[k * i:k * (i + 1)].mean(axis=0)
-            temp = np.array([round(x) for x in temp])
-            # add dupicate into newlist
-            for j in range(k):
-                newlist.append(temp)
-
-        newlist = np.array(newlist)
-        if newlist.shape[0] > train_x.shape[0]:
-            newlist = newlist[:train_x.shape[0]]
-        elif newlist.shape[0] < train_x.shape[0]:
-            res = train_x.shape[0] - newlist.shape[0]
-            for j in range(res):
-                newlist = np.vstack((newlist, newlist[-1]))
-
-        new_np = newlist
-        diff = train_x - newlist
-        distance = (diff * diff).sum()
-        cls.fit(new_np, train_y)
+        diff = train_x - new_train_x
+        diff[diff < 0] *= -1
+        distance = diff.sum() / (new_train_x.shape[0] * new_train_x.shape[1])
+        cls.fit(new_train_x, train_y)
         preds=cls.predict(test_x)
         labels = [' <=50K.', ' >50K.']
         preds=[x +'.' for x in preds]
 
         result="model: logistic regression"
-        logger.info("distance is  :  " + str(distance / new_np.shape[0]))
+        logger.info("distance is  :  " + str(distance))
         result +='\n'+classification_report(test_y, preds, target_names=labels)
         logger.info(result)
 
@@ -302,20 +252,19 @@ if __name__ == '__main__':
         train_x, train_y, test_x, test_y = read(data_name)
 
         from sklearn.naive_bayes import GaussianNB
+
         clf = GaussianNB(priors=[0.7, 0.3])
         clf.fit(train_x, train_y)
         preds = clf.predict_proba(train_x)
+
         diction1 = dict(zip(list(np.where(train_y == ' <=50K'))[0], preds[train_y == ' <=50K', 0]))
         diction2 = dict(zip(list(np.where(train_y == ' >50K'))[0], preds[train_y == ' >50K', 1]))
-        # diff=np.array(list(map(math.fabs,preds[:,0]-preds[:,1])))
-        # diction1 = dict(zip(list(np.where(train_y == ' <=50K'))[0], diff[train_y == ' <=50K']))
-        # diction2 = dict(zip(list(np.where(train_y == ' >50K'))[0], diff[train_y == ' >50K']))
         diction1 = sorted(diction1.items(), key=operator.itemgetter(1))
         diction2 = sorted(diction2.items(), key=operator.itemgetter(1))
-        # diction1 = sorted(diction1, key=diction1.__getitem__)
-        # diction2 = sorted(diction2, key=diction2.__getitem__)
+
         args.frequency=[diction1,diction2]
-        llp_x, pp, test_x, test_y,distance = process(train_x, train_y, test_x, test_y, args)
+
+        llp_x, pp, test_x, test_y, distance = process(train_x.astype(np.float32), train_y, test_x, test_y, args)
         logger.info('\n info_dic is ' + str(distance))
         cls, param = train_model(llp_x, pp, args,test_x, test_y )
 

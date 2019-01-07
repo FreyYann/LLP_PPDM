@@ -10,6 +10,7 @@ from sklearn.cluster import KMeans
 import operator
 import math
 from tqdm import tqdm
+import os
 from scipy.sparse import vstack, hstack, csr_matrix, issparse, csc_matrix, coo_matrix
 
 
@@ -63,6 +64,7 @@ def aggregate_bag(nplist,prob):
 
     """
     new_np=[]
+    distance = 0
     if o_config.agg_type == 'neighbour':
 
         k = o_config.anony_k
@@ -72,21 +74,25 @@ def aggregate_bag(nplist,prob):
         for i in range(int(nplist.shape[0] / k)):
             idx = result[i]
             temp=nplist[idx].mean(axis=0)
+
             if o_config.data == 'instagram':
-                temp = np.array([math.ceil(x) for x in temp])
+                temp = np.array([x for x in temp])
+
             temp_stack = np.array([temp for x in idx])
 
             if i==0:
                 new_np = temp_stack
-                diff = nplist[idx] - temp_stack
+                diff = np.array(nplist[idx] - temp_stack)
             else:
                 new_np = np.vstack((new_np, temp_stack))
                 diff = np.vstack((diff, nplist[idx] - temp_stack))
         # todo revise distance
         try:
-            distance = (diff * diff).sum()
+            diff[diff < 0] *= -1
+            distance = diff.sum()
         except:
             a = 1
+
     if o_config.agg_type == 'k_anony':
         k=o_config.anony_k
         portion=round(nplist.shape[0]/k)
@@ -96,11 +102,9 @@ def aggregate_bag(nplist,prob):
             temp=nplist[k*i:k*(i+1)].mean(axis=0)
 
             if o_config.data == 'instagram':
-                # temp=np.array([math.ceil(x) for x in temp])
                 temp = np.array([x for x in temp])
             else:
                 temp = np.array([x for x in temp])
-                # temp = np.array([round(x) for x in temp])
             # add dupicate into newlist
             for j in range(k):
                 newlist.append(temp)
@@ -115,24 +119,9 @@ def aggregate_bag(nplist,prob):
 
         new_np=newlist
         diff=nplist-newlist
-        distance=(diff * diff).sum()
+        diff[diff < 0] *= -1
+        distance = diff.sum()
 
-    if o_config.agg_type == 'k_anony_partial':
-        new_list=nplist.copy()
-        sum=new_list.sum(axis=0)/float(new_list.shape[0])
-        diction = dict(zip(list(range(sum.shape[0])),sum))
-        fea_list=np.array(sorted(diction.items(), key=operator.itemgetter(1),reverse=True))
-        # fea_list=np.array(sorted(diction.items(), key=operator.itemgetter(1),reversed=False))
-        k=o_config.sub_k
-        fea_pool=[int(x[0]) for x in fea_list[:k]]
-        sum[sum<0.5]=0
-        sum[sum >= 0.5] = 1
-        for idx in fea_pool:
-            new_list[:,idx]=sum[idx]
-
-        new_np=new_list
-        diff=nplist-new_list
-        distance=(diff * diff).sum()
     return new_np, distance
 
 def process(train_x, train_y, test_x, test_y, args):
@@ -143,7 +132,7 @@ def process(train_x, train_y, test_x, test_y, args):
     bag_size = o_config.bag_instance_num #args.bag_size
     typelist=o_config.typelist
     sub_k=o_config.sub_k
-    distance=-1
+    distance = 0
 
 
     if model_name == 'llp_lr' and args.source == 'inst':
@@ -157,13 +146,29 @@ def process(train_x, train_y, test_x, test_y, args):
         if in_bag:
             train_idx=32561
 
-            df = discretion(np.vstack((train_x,test_x)),typelist)
+            df = descretion(np.vstack((train_x, test_x)), typelist)
 
             train_x=df[:train_idx]
             test_x = df[train_idx:]
             args.dimension=df.shape[1]
 
-            ## todo include more
+            if o_config.agg_type == 'k_tree':
+                from src.main.treeFeature import builtTree
+
+                data_path = "/Users/yanxinzhou/course/thesis/is-FreyYann/data/{}.pkl".format(o_config.anony_k)
+                if os.path.isfile(data_path):
+                    with open(data_path, 'rb') as f:
+                        new_train_x = pickle.load(f)
+                else:
+                    new_train_x = builtTree(args, train_x)
+                    with open(data_path, 'wb') as f:
+                        pickle.dump(new_train_x, f, 1)
+
+                diff = train_x - new_train_x
+                diff[diff < 0] *= -1
+                args.temp = diff
+                train_x = new_train_x
+
             llp_x, pp,distance= makebag(args, train_x, train_y, bag_num, bag_size,sub_k, 1)
 
             return llp_x, pp, test_x, test_y,distance
@@ -176,7 +181,7 @@ def process(train_x, train_y, test_x, test_y, args):
     return train_x, train_y, test_x, test_y,distance
 
 
-def discretion(x,typelist):
+def descretion(x, typelist):
     """
     to discretize the dataframe
     :param x: numpy.ndarray the dataframe of the input
@@ -214,13 +219,13 @@ def discretion(x,typelist):
                 temp[idx[j], i] = j
             frame = np.zeros((x.shape[0], 10))
             for j in range(x.shape[0]):
-                frame[j, temp[j, i]]=1
+                frame[j, int(temp[j, i])] = 1
             if i==0:
                 df=frame
             else:
                 df=np.hstack((df,frame))
 
-    return df
+    return df.astype(np.float32)
 
 
 def makebag(args, train_x, train_y, m=200, num=125, sub_k=20, random_state=1):
@@ -244,13 +249,10 @@ def makebag(args, train_x, train_y, m=200, num=125, sub_k=20, random_state=1):
 
     if name=='inst':
 
-        # all1 = np.array(frequency[0])
-        # tn = all1[all1[:, 1] > 0.96][:, 0]
-        # fp = all1[all1[:, 1] < 0.04][:, 0]
-        # all2 = np.array(frequency[1])
-        # tp = all2[all2[:, 1] > 0.04][:, 0]
-        # fn = all2[all2[:, 1] < 0.96][:, 0]
+        distance = []
+        size = o_config.bag_instance_num
 
+        #
         all1 = np.array(frequency[0])
         tn = all1[all1[:, 1] > 1 - f_threshold][:, 0]
         fp = all1[all1[:, 1] < f_threshold][:, 0]
@@ -259,61 +261,64 @@ def makebag(args, train_x, train_y, m=200, num=125, sub_k=20, random_state=1):
         tp = all2[all2[:, 1] > f_threshold][:, 0]
         fn = all2[all2[:, 1] < 1 - f_threshold][:, 0]
 
-        # all1 = np.array(frequency[0])
-        # tn = all1[all1[:, 1] > 1 - f_threshold][:, 0]
-        # fp = all1[all1[:, 1] < f_threshold][:, 0]
-        #
-        # all2 = np.array(frequency[1])
-        # tp = all2[all2[:, 1] > 1 - f_threshold][:, 0]
-        # fn = all2[all2[:, 1] < f_threshold][:, 0]
 
-        distance = []
-        size = o_config.bag_instance_num
         # todo global pbar
         pbar = tqdm(total=m + 1)
         for i in range(m):  # m=200
             rnd = np.random.RandomState(i)
             if i % 2 == 0:
                 prob = o_config.division[0]  # 0.2
-                bag1 = tn[rnd.choice(len(tn), int(size * prob), replace=False)]
-                bag2 = tp[rnd.choice(len(tp), int(size * (1. - prob)), replace=False)]
+                if o_config.is_laplace:
+                    sen = 1 / o_config.bag_instance_num
+                    eps = o_config.epsilon
+                    noise = np.random.laplace(0, sen / eps, 1)[0]
+                    prob = min(0.5, prob + math.fabs(noise))
+                bag1 = tn[rnd.choice(len(tn), int(round(size * o_config.division[0])), replace=False)]
+                bag2 = tp[rnd.choice(len(tp), int(round(size * (1. - o_config.division[0]))), replace=False)]
+                p = np.array([prob, 1 - prob])
             else:
                 prob = o_config.division[1]  # 0.8
-                # bag1 = tn[rnd.choice(len(tn), int(size * prob), replace=False)]
-                # bag2 = tp[rnd.choice(len(tp), int(size * (1. - prob)), replace=False)]
-                bag1 = fp[rnd.choice(len(fp), int(size * prob), replace=False)]
-                bag2 = fn[rnd.choice(len(fn), int(size * (1. - prob)), replace=False)]
+                if o_config.is_laplace:
+                    sen = 1 / o_config.bag_instance_num
+                    eps = o_config.epsilon
+                    noise = np.random.laplace(0, sen / eps, 1)[0]
+                    prob = max(0.5, prob - math.fabs(noise))
+                bag1 = fp[rnd.choice(len(fp), int(round(size * o_config.division[1])), replace=False)]
+                bag2 = fn[rnd.choice(len(fn), int(round(size * (1 - o_config.division[1]))), replace=False)]
+                p = np.array([prob, 1 - prob])
 
             bag1 = [int(x) for x in bag1]
             bag2 = [int(x) for x in bag2]
 
-            class1, dic1 = aggregate_bag(train_x[bag1], prob)
-            class2, dic2 = aggregate_bag(train_x[bag2], 1 - prob)
+            if o_config.agg_type == "k_tree":
+                new_train_x = train_x[bag1 + bag2]
+                diff = args.temp.astype(np.float32)
+                distance.append(diff[bag1].sum() + diff[bag2].sum())
+            else:
+                class1, dic1 = aggregate_bag(train_x[bag1], prob)
+                class2, dic2 = aggregate_bag(train_x[bag2], 1 - prob)
+                distance.append(dic1 + dic2)
+                new_train_x = np.vstack((class1, class2))
 
-            distance.append(dic1 + dic2)
+            # df = np.array(list(map(mapvalue_ins, train_y[bag1 + bag2])))
+            # p = np.bincount(df)
 
-            df = np.array(list(map(mapvalue_ins, train_y[bag1 + bag2])))
-            p = np.bincount(df)
-
-            new_train_x = np.vstack((class1, class2))
             if new_train_x.shape[0] < o_config.bag_instance_num:
                 new_train_x = np.vstack((new_train_x, [new_train_x[-1]]))
 
             if i == 0:
-                pp = np.array([p / np.sum(p)])
+                pp = np.array([p])  # np.array([p / np.sum(p)])
                 llp_x = np.array([new_train_x])
             else:
-                pp = np.append(pp, [p / np.sum(p)], axis=0)
+                pp = np.append(pp, [p], axis=0)  #[p / np.sum(p)], axis=0)
                 llp_x = np.append(llp_x, [new_train_x], axis=0)
+
             pbar.update(1)
 
 
     if name == 'adult':
-
-        # C1 = np.where(train_y == ' <=50K')[0]
-        # C2 = np.where(train_y == ' >50K')[0]
-        # all1 = frequency[0]
-        # all2 = frequency[1]
+        distance = []
+        size = o_config.bag_instance_num
 
         all1 = np.array(frequency[0])
         tn = all1[all1[:, 1] > 1 - f_threshold][:, 0]
@@ -322,121 +327,66 @@ def makebag(args, train_x, train_y, m=200, num=125, sub_k=20, random_state=1):
         all2 = np.array(frequency[1])
         tp = all2[all2[:, 1] > f_threshold][:, 0]
         fn = all2[all2[:, 1] < 1 - f_threshold][:, 0]
-
-        distance=[]
-        size = o_config.bag_instance_num
-
+        #
         pbar = tqdm(total=m + 1)
         for i in range(m):  # m=200
             rnd = np.random.RandomState(i)
             if i % 2 == 0:
-                prob = 0.2
-                bag1 = tn[rnd.choice(len(tn), int(size * prob), replace=False)]
-                bag2 = tp[rnd.choice(len(tp), int(size * (1. - prob)), replace=False)]
+                prob = o_config.division[0]
+                if o_config.is_laplace:
+                    sen = 1 / o_config.bag_instance_num
+                    eps = o_config.epsilon
+                    noise = np.random.laplace(0, sen / eps, 1)[0]
+                    prob = min(0.5, prob + math.fabs(noise))
+                bag1 = tn[rnd.choice(len(tn), int(round(size * o_config.division[0])), replace=False)]
+                bag2 = tp[rnd.choice(len(tp), int(round(size * (1. - o_config.division[0]))), replace=False)]
+                p = np.array([prob, 1 - prob])
             else:
-                prob = 0.8
-                bag1 = fp[rnd.choice(len(fp), int(size * prob), replace=False)]
-                bag2 = fn[rnd.choice(len(fn), int(size * (1. - prob)), replace=False)]
+                prob = o_config.division[1]
+                if o_config.is_laplace:
+                    sen = 1 / o_config.bag_instance_num
+                    eps = o_config.epsilon
+                    noise = np.random.laplace(0, sen / eps, 1)[0]
+                    prob = max(0.5, prob - math.fabs(noise))
+                bag1 = fp[rnd.choice(len(fp), int(round(size * o_config.division[1])), replace=False)]
+                bag2 = fn[rnd.choice(len(fn), int(round(size * (1. - o_config.division[1]))), replace=False)]
+                p = np.array([prob, 1 - prob])
 
-            # bag1 = list(C1[rnd.choice(len(C1), int(size * prob), replace=False)])
-            # bag2 = list(C2[rnd.choice(len(C2), int(size * (1. - prob)), replace=False)])
             bag1 = [int(x) for x in bag1]
             bag2 = [int(x) for x in bag2]
 
-            class1,dic1=aggregate_bag(train_x[bag1],prob)
-            class2,dic2= aggregate_bag(train_x[bag2],1-prob)
-
-            distance.append(dic1+dic2)
-
-            df = np.array(list(map(mapvalue, train_y[bag1+bag2].values)))
-            p = np.bincount(df)
-
-            new_train_x=np.vstack((class1,class2))
-            # np.random.shuffle(bag)
-
-            if i == 0:
-                pp = np.array([p / np.sum(p)])
-                llp_x = np.array([new_train_x])
-                # llp_x = np.array([train_x[bag]])
+            if o_config.agg_type == "k_tree":
+                new_train_x = train_x[bag1 + bag2]
+                diff = args.temp.astype(np.float32)
+                distance.append(diff[bag1].sum() + diff[bag2].sum())
             else:
-                pp = np.append(pp, [p / np.sum(p)], axis=0)
-                # llp_x.append(csr_matrix(train_x.loc[bag]))  # llp_x m*d
-                # llp_x.append(tosparse(train_x.loc[bag]))
-                # llp_x = np.append(llp_x, [train_x[bag]], axis=0)
-                # llp_x = np.vstack((llp_x, new_train_x))
+                class1, dic1 = aggregate_bag(train_x[bag1], prob)
+                class2, dic2 = aggregate_bag(train_x[bag2], 1 - prob)
+                distance.append(dic1 + dic2)
+                new_train_x = np.vstack((class1, class2))
+
+            # df = np.array(list(map(mapvalue, train_y[bag1+bag2].values)))
+            # p = np.bincount(df)
+
+            # np.random.shuffle(bag)
+            if i == 0:
+                pp = np.array([p])  #np.array([p / np.sum(p)])
                 if new_train_x.shape[0] < o_config.bag_instance_num:
                     new_train_x = np.vstack((new_train_x, [new_train_x[-1]]))
+                llp_x = np.array([new_train_x])
+            else:
+                pp = np.append(pp, [p], axis=0)  #[p / np.sum(p)], axis=0)
+                if new_train_x.shape[0] < o_config.bag_instance_num:
+                    new_train_x = np.vstack((new_train_x, [new_train_x[-1]]))
+
                 try:
                     llp_x = np.append(llp_x, [new_train_x], axis=0)
                 except:
                     a=1
 
             pbar.update(1)
-    elif name == 'land':
-        train_x = train_x.values
-        train_y = train_y.values
-        ## vector to scalar
-        train_y = np.array([np.where(x == 1)[0][0] for x in train_y])
-        distance = []
-        # class idx
-        c = []
-        for i in range(6):
-            c.append(np.where(train_y == i)[0])
 
-        for i in range(m):  # m=200
-            rnd = np.random.RandomState(i)
-            size = num
-            prob = np.random.normal(0.5, 0.001, 1)[0]
-            bag = []
-            plist=[]
-            for j in range(6):
-                if j == (i % 6):
-                    p_j = prob
-                else:
-                    p_j = (1 - prob) / 5
-                bag.append(list(c[j][rnd.choice(len(c[j]), int(size * p_j) + 1, replace=True)]))
-                plist.append(p_j)
-
-            # bag = bag[:num]
-            # shuffle(bag)
-
-            result=()
-
-            for  i  in  range(len(bag)):
-                tempclass, tempdic=aggregate_bag(train_x[bag[i]],plist[i])
-                distance.append(plist[i]*tempdic)
-                result=result+(tempclass,)
-
-
-            new_train_x = np.vstack(result)[:o_config.bag_instance_num]
-
-            # df = np.array(list(map(mapvalue, train_y[bag].values)))
-            temp=[]
-            for b in bag:
-                temp+=b
-            bag=temp
-
-            p = np.bincount(train_y[bag])
-            for i in range(6):
-                if i >len(p)-1:
-                    p=np.append(p,0)
-
-
-            if len(pp)==0:
-                    pp = np.array([p / np.sum(p)])
-                    llp_x = np.array([new_train_x])
-                # llp_x = np.array([train_x[bag]])
-            else:
-                # if np.array([p / np.sum(p)]).shape[0]!=1 or np.array([p / np.sum(p)]).shape[1]!=6:
-                #     print(123)
-                try:
-                    pp = np.append(pp, np.array([p / np.sum(p)]), axis=0)
-                    llp_x = np.append(llp_x, [new_train_x], axis=0)
-                except:
-                    a=1
-                # llp_x = np.append(llp_x, [train_x[bag]], axis=0)
-
-    distance=np.array(distance).sum()/len(distance)/o_config.bag_instance_num
+    distance = np.array(distance).sum() / (llp_x.shape[0] * llp_x.shape[1] * llp_x.shape[2])
 
     idx_list = np.array(list(range(pp.shape[0])))
     np.random.shuffle(idx_list)

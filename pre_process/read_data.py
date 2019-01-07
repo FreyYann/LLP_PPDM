@@ -3,8 +3,8 @@ import pandas as pd
 
 def read(data_name):
     if data_name == 'adult':
-        path = '/home/xyan22/thesis/data/adult/'
-        # path = '/Users/yanxinzhou/course/thesis/data/adult/'
+        # path = '/home/xyan22/thesis/data/adult/'
+        path = '/Users/yanxinzhou/course/thesis/data/adult/'
         train = pd.read_csv(path + 'train.csv', index_col=False)
         test = pd.read_csv(path + 'test.csv', index_col=False)
 
