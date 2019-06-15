@@ -1,4 +1,6 @@
 # Semi-supervised Learning & epislon Differential Privacy Protection
+[Paper Abstract Website](
+https://search.proquest.com/openview/03fc8cadee7b75368db2a14e6c1b83bc/1?pq-origsite=gscholar&cbl=18750&diss=y)
 
 Combined Semi-supervised learning with Privacy Perserving Data Mining algorithm, which outperformed all previous privacy 
 preserving methods.
