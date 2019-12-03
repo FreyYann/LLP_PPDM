@@ -20,14 +20,12 @@ from multiprocessing.dummy import Pool as dPool
 from sklearn.feature_selection import chi2
 from datetime import datetime
 import pandas as pd
-from tqdm import tqdm
 import pdb as db
 
 # import itertools, random
 # import warnings
-from src.main import config
-from src.pre_process import o_config as local_conf
-from src.pre_process import o_config
+
+
 class LabelRegularization(object):
     def __init__(self, config, args):
         # the label kinds
@@ -153,20 +151,6 @@ class LabelRegularization(object):
         return self.dev
 
     def sto_fit(self, llp_x, p_y, xl=None, yl=None, initOnly=False):
-        ## TODO label balance
-        ### preknown instance
-        # c0 = np.where(y == ' <=50K')[0]
-        # c1 = np.where(y == ' >50K')[0]
-        # rnd = np.random.RandomState(1)
-        # know = list(c0[rnd.choice(len(c0), int(x.shape[0] * self.knownporp * 0.5), replace=True)])
-        # know += list(c1[rnd.choice(len(c1), int(x.shape[0] * self.knownporp * 0.5), replace=True)])
-        # xl = x.values[know]
-        # yl = y.values[know]
-        # yl[yl == ' <=50K'] = 0
-        # yl[yl == ' >50K'] = 1
-
-        # if self.add_noise == 0:
-        #     p_y = self.pre_noise(llp_x.shape[1], p_y, self.eps)`````
 
         n_bag = self.M
         batch_bag = self.batch
@@ -200,14 +184,6 @@ class LabelRegularization(object):
             if step % 10 == 0:
                 kld = 0.0
 
-                # pl = self.predict_proba(xl, w)
-                # loghl = np.log(pl)
-                # loghl = np.nan_to_num(loghl)
-                # yl_p = np.zeros((len(yl), self.K))
-                # yl_p[[yl == 0]] = [1, 0]
-                # yl_p[[yl == 1]] = [0, 1]
-                # kld += -(yl_p * (self.yida * loghl)).sum()
-
                 for m in range(n_bag):
                     ptilda = p_y[m]
 
@@ -223,7 +199,6 @@ class LabelRegularization(object):
                     else:
                         if o_config.add_intercept:
                             llpx_new = np.hstack((llp_x[m], np.ones((llp_x[m].shape[0], 1))))
-                            # llpx_new=np.concatenate((llp_x[m],np.ones((llp_x[m].shape[0],llp_x[m].shape[1],1))),axis=2)
                             p = self.predict_proba(llpx_new, w)
                         else:
                             p = self.predict_proba(llp_x[m], w)
@@ -234,20 +209,7 @@ class LabelRegularization(object):
                 if kld < min_cost:
                     min_w = w
 
-            # pbar.update(1)
             step += 1
-            # todo global pbar
-            # pbar.update(1)
-        # if self.add_noise == 2 and self.eps != 0:
-        #
-        #     b = np.zeros((self.K, self.N))
-        #     temp = self.eps * self.M * train_x.shape[1] * self.lamb
-        #     norm = np.random.gamma(self.N, 2 / temp, 1)
-        #     self.b = tools.sample_laplace(b, norm)
-        #
-        #     self.weight = min_w + self.b.reshape((self.K * self.N))
-        # else:
-        #     self.weight = min_w
         endtime=datetime.now()
         self.traintime=(endtime-starttime).seconds/60
         if o_config.add_intercept:

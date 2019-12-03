@@ -110,7 +110,7 @@ def train_model(llp_x, pp, args,test_x=None, test_y=None):
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("-n", "--nmodel", dest='model_name', help="choose the model name", default='llp_lr',
+    parser.add_argument("-n", "--nmodel", dest='model_name', help="choose the core name", default='llp_lr',
                         action="store_true")
     parser.add_argument("-b", "--bag", dest='in_bag', help="whether in bag", default='True',
                         action="store_true")
@@ -289,7 +289,7 @@ if __name__ == '__main__':
         labels = [' <=50K.', ' >50K.']
         preds=[x +'.' for x in preds]
 
-        result="model: logistic regression"
+        result="core: logistic regression"
         logger.info("distance is  :  " + str(distance / new_np.shape[0]))
         result +='\n'+classification_report(test_y, preds, target_names=labels)
         logger.info(result)
@@ -297,7 +297,7 @@ if __name__ == '__main__':
     if args.model_name == 'llp_lr' and data_name == 'adult':
         args.source="adult"
         args.dimension=14
-        logger.info('model is {}, data from {}'.format(args.model_name, data_name))
+        logger.info('core is {}, data from {}'.format(args.model_name, data_name))
 
         train_x, train_y, test_x, test_y = read(data_name)
 
